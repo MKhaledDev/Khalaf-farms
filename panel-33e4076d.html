@@ -226,16 +226,10 @@
             '<div class="tot"><span>المطلوب تحصيله</span><span>'+esc(o.total)+' جنيه</span></div></div>'+
           '<div class="row"><div><label>الحالة</label><select data-f="status">'+STATUSES.map(function(s){return '<option'+(s===o.status?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'+
           '<div><label>رقم التتبع</label><input data-f="tracking" dir="ltr" value="'+esc(o.tracking||'')+'"></div>'+
-          '<div style="flex:0;display:flex;gap:6px"><button class="btn green" data-a="save">حفظ</button><button class="btn red" data-a="del">مسح</button></div></div>';
+          '<div style="flex:0;display:flex;gap:6px"><button class="btn green" data-a="save">حفظ</button></div></div>';
         d.querySelector('[data-a=save]').addEventListener('click',function(){
           db('orders?id=eq.'+o.id,{method:'PATCH',prefer:'return=minimal',body:{status:d.querySelector('[data-f=status]').value,tracking:d.querySelector('[data-f=tracking]').value.trim()||null}})
             .then(function(){toast('تم الحفظ');refreshNew();loadStats();}).catch(function(e){toast(e.message);});
-        });
-        d.querySelector('[data-a=del]').addEventListener('click',function(){
-          if(!confirm('مسح الأوردر #'+o.order_no+' نهائيا؟ مش هينفع ترجعه.'))return;
-          db('orders?id=eq.'+o.id,{method:'DELETE',prefer:'return=minimal'}).then(function(){
-            d.remove();toast('تم مسح الأوردر');refreshNew();loadStats();
-          }).catch(function(e){toast(e.message);});
         });
         list.appendChild(d);
       });
