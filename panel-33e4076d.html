@@ -49,6 +49,13 @@
   .thumb{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);}
   .imgrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .imgrow input[type=file]{width:auto;max-width:210px;font-size:0.8rem;padding:6px;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
+  .stat .n{font-size:1.45rem;font-weight:800;line-height:1.3;direction:ltr;text-align:right;}
+  .stat .l{font-size:0.8rem;color:var(--dim);}
+  .stat.main{background:var(--gold);border-color:var(--gold);color:#fff;grid-column:1/-1;}
+  .stat.main .l{color:#f4ead6;}
+  .stat.ret .n{color:var(--red);}
   [hidden]{display:none !important;}
 </style>
 </head>
@@ -72,6 +79,12 @@
   </div>
   <main>
     <section id="t-orders">
+      <div class="stats">
+        <div class="stat main"><div class="l">إجمالي المبيعات (من غير الشحن، من غير الملغي والمرتجع)</div><div class="n" id="st-total">0 EGP</div><div class="l" id="st-count"></div></div>
+        <div class="stat"><div class="l">منها تم تسليمه</div><div class="n" id="st-delivered">0 EGP</div></div>
+        <div class="stat ret"><div class="l">مرتجع (<span id="st-ret-c">0</span> أوردر)</div><div class="n" id="st-ret">0 EGP</div></div>
+        <div class="stat"><div class="l">ملغي (<span id="st-can-c">0</span> أوردر)</div><div class="n" id="st-can">0 EGP</div></div>
+      </div>
       <div class="toolbar">
         <select id="o-filter">
           <option value="">كل الأوردرات</option><option>جديد</option><option>تم التأكيد</option><option>تم الشحن</option><option>تم التسليم</option><option>مرتجع</option><option>ملغي</option>
@@ -213,17 +226,46 @@
             '<div class="tot"><span>المطلوب تحصيله</span><span>'+esc(o.total)+' جنيه</span></div></div>'+
           '<div class="row"><div><label>الحالة</label><select data-f="status">'+STATUSES.map(function(s){return '<option'+(s===o.status?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'+
           '<div><label>رقم التتبع</label><input data-f="tracking" dir="ltr" value="'+esc(o.tracking||'')+'"></div>'+
-          '<div style="flex:0"><button class="btn green">حفظ</button></div></div>';
-        d.querySelector('button').addEventListener('click',function(){
+          '<div style="flex:0;display:flex;gap:6px"><button class="btn green" data-a="save">حفظ</button><button class="btn red" data-a="del">مسح</button></div></div>';
+        d.querySelector('[data-a=save]').addEventListener('click',function(){
           db('orders?id=eq.'+o.id,{method:'PATCH',prefer:'return=minimal',body:{status:d.querySelector('[data-f=status]').value,tracking:d.querySelector('[data-f=tracking]').value.trim()||null}})
-            .then(function(){toast('تم الحفظ');refreshNew();}).catch(function(e){toast(e.message);});
+            .then(function(){toast('تم الحفظ');refreshNew();loadStats();}).catch(function(e){toast(e.message);});
+        });
+        d.querySelector('[data-a=del]').addEventListener('click',function(){
+          if(!confirm('مسح الأوردر #'+o.order_no+' نهائيا؟ مش هينفع ترجعه.'))return;
+          db('orders?id=eq.'+o.id,{method:'DELETE',prefer:'return=minimal'}).then(function(){
+            d.remove();toast('تم مسح الأوردر');refreshNew();loadStats();
+          }).catch(function(e){toast(e.message);});
         });
         list.appendChild(d);
       });
     }).catch(function(e){toast(e.message);});
   }
   $('o-filter').addEventListener('change',loadOrders);
-  $('o-refresh').addEventListener('click',function(){loadOrders();refreshNew();});
+  $('o-refresh').addEventListener('click',function(){loadOrders();refreshNew();loadStats();});
+  // ---- stats (بتتحدث مع كل تغيير، وكل دقيقة لوحدها) ----
+  function money(n){return Number(n||0).toLocaleString('en-US')+' EGP';}
+  function fetchAllOrdersLite(offset,acc){
+    return db('orders?select=status,subtotal&order=order_no.asc&limit=1000&offset='+offset).then(function(rows){
+      acc=acc.concat(rows);
+      return rows.length===1000?fetchAllOrdersLite(offset+1000,acc):acc;
+    });
+  }
+  function loadStats(){
+    fetchAllOrdersLite(0,[]).then(function(rows){
+      var total=0,cnt=0,deliv=0,ret=0,retC=0,can=0,canC=0;
+      rows.forEach(function(o){
+        var v=o.subtotal||0;
+        if(o.status==='مرتجع'){ret+=v;retC++;}
+        else if(o.status==='ملغي'){can+=v;canC++;}
+        else{total+=v;cnt++;if(o.status==='تم التسليم')deliv+=v;}
+      });
+      $('st-total').textContent=money(total);$('st-count').textContent=cnt+' أوردر';
+      $('st-delivered').textContent=money(deliv);
+      $('st-ret').textContent=money(ret);$('st-ret-c').textContent=retC;
+      $('st-can').textContent=money(can);$('st-can-c').textContent=canC;
+    }).catch(function(){});
+  }
   function refreshNew(){
     db('orders?select=id&status=eq.'+encodeURIComponent('جديد')).then(function(r){var b=$('new-count');b.hidden=!r.length;b.textContent=r.length;}).catch(function(){});
   }
@@ -367,7 +409,8 @@
     db('settings?key=eq.shipping_api_key',{method:'PATCH',prefer:'return=minimal',body:{value:k}}).then(function(){apiKey=k;shown=true;renderKey();toast('تم تغيير المفتاح');}).catch(function(e){toast(e.message);});
   });
 
-  function start(){$('login').hidden=true;$('app').hidden=false;loadOrders();refreshNew();}
+  var poll=null;
+  function start(){$('login').hidden=true;$('app').hidden=false;loadOrders();refreshNew();loadStats();clearInterval(poll);poll=setInterval(function(){if(session){refreshNew();loadStats();}},60000);}
   if(session)start();
 })();
 </script>
