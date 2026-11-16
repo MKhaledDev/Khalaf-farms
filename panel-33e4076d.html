@@ -126,16 +126,7 @@
     </section>
 
     <section id="t-api" hidden>
-      <div class="warn">المفتاح ده يتعطى لشركة الشحن بس. مش بيدّيهم أي صلاحية غير قراءة الأوردرات وتحديث حالتها. لو اتسرب غيّره من الزرار تحت.</div>
-      <div class="box">
-        <strong>مفتاح الـ API</strong>
-        <div class="keybox" id="api-key" style="margin:8px 0">••••••••••••</div>
-        <div class="toolbar">
-          <button class="btn ghost" id="k-show">إظهار / إخفاء</button>
-          <button class="btn ghost" id="k-copy">نسخ</button>
-          <button class="btn red" id="k-regen">تغيير المفتاح</button>
-        </div>
-      </div>
+      <div class="warn">مفتاح الـ API مش بيظهر هنا عن قصد (للأمان). بيتولّد ويتغيّر من Supabase > SQL Editor بملف <b>rotate-api-key.sql</b>، وبيظهر مرة واحدة بس لحظة توليده. حتى لو حد دخل الأدمن مش هيقدر يشوفه ولا يغيّره.</div>
       <div class="box">
         <strong>التوثيق اللي تديه لشركة الشحن</strong>
         <p class="muted" style="margin:6px 0">كل الطلبات POST بـ JSON ولازم الهيدرز: <code>apikey</code> و <code>Content-Type: application/json</code></p>
@@ -384,24 +375,11 @@
     Promise.all(jobs).then(function(){toast('تم التطبيق');['b-bahari','b-qibli','b-other'].forEach(function(i){$(i).value='';});loadShipping();}).catch(function(e){toast(e.message);});
   });
 
-  // ---- API ----
-  var apiKey='',shown=false;
-  function renderKey(){$('api-key').textContent=shown?apiKey:'••••••••••••••••••••••••';}
+  // ---- API (التوثيق بس، المفتاح مش بيتعرض) ----
   function loadApi(){
-    db('settings?select=value&key=eq.shipping_api_key').then(function(r){
-      apiKey=r[0]?r[0].value:'';renderKey();
-      $('doc1').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_get_orders' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_status\":\"جديد\",\"p_after\":0}'";
-      $('doc2').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_update_order' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_order_no\":1001,\"p_status\":\"تم الشحن\",\"p_tracking\":\"TRACK123\"}'";
-    }).catch(function(e){toast(e.message);});
+    $('doc1').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_get_orders' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_status\":\"جديد\",\"p_after\":0}'";
+    $('doc2').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_update_order' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_order_no\":1001,\"p_status\":\"تم الشحن\",\"p_tracking\":\"TRACK123\"}'";
   }
-  $('k-show').addEventListener('click',function(){shown=!shown;renderKey();});
-  $('k-copy').addEventListener('click',function(){try{navigator.clipboard.writeText(apiKey);toast('تم النسخ');}catch(e){toast('انسخه يدوي');}});
-  $('k-regen').addEventListener('click',function(){
-    if(!confirm('المفتاح القديم هيبطل يشتغل وشركة الشحن لازم تاخد الجديد. متأكد؟'))return;
-    var a=new Uint8Array(24);crypto.getRandomValues(a);
-    var k=Array.prototype.map.call(a,function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
-    db('settings?key=eq.shipping_api_key',{method:'PATCH',prefer:'return=minimal',body:{value:k}}).then(function(){apiKey=k;shown=true;renderKey();toast('تم تغيير المفتاح');}).catch(function(e){toast(e.message);});
-  });
 
   var poll=null;
   function start(){$('login').hidden=true;$('app').hidden=false;loadOrders();refreshNew();loadStats();clearInterval(poll);poll=setInterval(function(){if(session){refreshNew();loadStats();}},60000);}
