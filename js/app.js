@@ -57,6 +57,7 @@
   // ===== State =====
   var products = [];
   var rates = [];
+  var areas = [];
   var CART_KEY = 'khalaf_cart_v2';
   var cart = [];
   try { var saved = JSON.parse(sessionStorage.getItem(CART_KEY) || '[]'); if(Array.isArray(saved)) cart = saved; } catch(e){}
@@ -75,13 +76,15 @@
     if(!silent) grid.innerHTML = '<div class="load-msg">جاري تحميل المنتجات...</div>';
     return Promise.all([
       sb('products?select=*&active=eq.true&order=sort.asc'),
-      sb('shipping_rates?select=*&active=eq.true&order=sort.asc')
+      sb('shipping_rates?select=*&active=eq.true&order=sort.asc'),
+      sb('areas?select=id,governorate,name&active=eq.true&order=name.asc&limit=5000').catch(function(){ return []; })
     ]).then(function(res){
       products = res[0] || [];
       rates = res[1] || [];
+      areas = res[2] || [];
       clampCart();
       saveCart();
-      renderProducts(); renderOfferBanner(); fillGovernorates(); updateBadge();
+      renderProducts(); renderOfferBanner(); fillGovernorates(); updateAreaField(); updateBadge();
     }).catch(function(){
       if(silent) return;
       grid.innerHTML = '<div class="load-msg">مقدرناش نحمل المنتجات دلوقتي.<br><button type="button" class="btn btn-outline" id="retry-btn">حاول تاني</button></div>';
@@ -246,7 +249,21 @@
     document.getElementById('sum-ship').textContent = ship == null ? 'اختار المحافظة' : (ship === 0 ? 'مجاني' : ship + ' جنيه');
     document.getElementById('sum-total').textContent = (sub + (ship || 0)) + ' جنيه';
   }
-  govSel.addEventListener('change', updateSummary);
+  var areaSel = document.getElementById('co-area');
+  function areasFor(g){ return areas.filter(function(a){ return a.governorate === g; }); }
+  function updateAreaField(){
+    var list = areasFor(govSel.value);
+    var useSelect = list.length > 0;
+    document.getElementById('area-field').hidden = !useSelect;
+    document.getElementById('city-field').hidden = useSelect;
+    areaSel.innerHTML = '<option value="">اختار المدينة / المنطقة</option>';
+    list.forEach(function(a){
+      var o = document.createElement('option');
+      o.value = a.id; o.textContent = a.name;
+      areaSel.appendChild(o);
+    });
+  }
+  govSel.addEventListener('change', function(){ updateAreaField(); updateSummary(); });
 
   document.getElementById('go-checkout-btn').addEventListener('click', function(){
     if(!cartLines().length) return;
@@ -266,15 +283,20 @@
     var name = document.getElementById('co-name').value.trim();
     var phone = document.getElementById('co-phone').value.trim();
     var gov = govSel.value;
-    var city = document.getElementById('co-city').value.trim();
+    var useArea = !document.getElementById('area-field').hidden;
+    var areaId = useArea ? parseInt(areaSel.value, 10) : null;
+    var city = useArea ? (areaSel.options[areaSel.selectedIndex] ? areaSel.options[areaSel.selectedIndex].textContent : '') : document.getElementById('co-city').value.trim();
     var address = document.getElementById('co-address').value.trim();
-    if(!name || !phone || !gov || !city || !address){ fail('من فضلك املا كل البيانات'); return; }
+    var phone2 = document.getElementById('co-phone2').value.trim();
+    var note = document.getElementById('co-note').value.trim();
+    if(!name || !phone || !gov || !address || (useArea ? !areaId : !city)){ fail('من فضلك املا كل البيانات'); return; }
     var lines = cartLines();
     if(!lines.length){ fail('العربة فاضية'); return; }
     errEl.classList.remove('show');
     confirmBtn.disabled = true; confirmBtn.textContent = 'جاري إرسال الطلب...';
     sb('rpc/create_order', {method: 'POST', body: {
       p_name: name, p_phone: phone, p_governorate: gov, p_city: city, p_address: address,
+      p_area_id: areaId, p_phone2: phone2 || null, p_note: note || null,
       p_items: lines.map(function(l){ return {id: l.p.id, qty: l.qty}; })
     }}).then(function(res){
       cart = []; saveCart(); updateBadge(); renderCart();
@@ -283,8 +305,8 @@
       document.getElementById('co-title').textContent = 'تم الطلب';
       document.getElementById('co-form').hidden = true;
       document.getElementById('co-done').hidden = false;
-      ['co-name','co-phone','co-city','co-address'].forEach(function(i){ document.getElementById(i).value = ''; });
-      govSel.value = '';
+      ['co-name','co-phone','co-phone2','co-city','co-address','co-note'].forEach(function(i){ document.getElementById(i).value = ''; });
+      govSel.value = ''; updateAreaField();
     }).catch(function(e){
       fail(e && e.message ? e.message : 'حصلت مشكلة، جرب تاني');
       load(true);

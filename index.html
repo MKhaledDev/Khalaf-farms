@@ -193,16 +193,28 @@
         <input type="tel" id="co-phone" autocomplete="tel" inputmode="tel" maxlength="20">
       </div>
       <div class="field">
+        <label>رقم موبايل تاني (اختياري)</label>
+        <input type="tel" id="co-phone2" inputmode="tel" maxlength="20">
+      </div>
+      <div class="field">
         <label>المحافظة</label>
         <select id="co-governorate"><option value="">اختار المحافظة</option></select>
       </div>
-      <div class="field">
+      <div class="field" id="area-field" hidden>
+        <label>المدينة / المنطقة</label>
+        <select id="co-area"><option value="">اختار المدينة / المنطقة</option></select>
+      </div>
+      <div class="field" id="city-field">
         <label>المدينة / المنطقة</label>
         <input type="text" id="co-city" maxlength="60">
       </div>
       <div class="field">
         <label>العنوان بالتفصيل (الشارع، رقم العمارة، علامة مميزة)</label>
         <textarea id="co-address" maxlength="300"></textarea>
+      </div>
+      <div class="field">
+        <label>ملاحظات (اختياري)</label>
+        <input type="text" id="co-note" maxlength="300">
       </div>
 
       <div class="sum-box">

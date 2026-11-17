@@ -27,8 +27,8 @@
   <div class="tabs">
     <button class="tab on" data-tab="orders">الأوردرات <span class="pill new" id="new-count" hidden>0</span></button>
     <button class="tab" data-tab="products">المنتجات والعروض</button>
-    <button class="tab" data-tab="shipping">أسعار الشحن</button>
-    <button class="tab" data-tab="api">ربط شركة الشحن</button>
+    <button class="tab" data-tab="shipping">أسعار وكودات الشحن</button>
+    <button class="tab" data-tab="areas">المدن والمناطق</button>
   </div>
   <main>
     <section id="t-orders">
@@ -40,10 +40,11 @@
       </div>
       <div class="toolbar">
         <select id="o-filter">
-          <option value="">كل الأوردرات</option><option>جديد</option><option>تم التأكيد</option><option>تم الشحن</option><option>تم التسليم</option><option>مرتجع</option><option>ملغي</option>
+          <option value="">كل الأوردرات</option><option>جديد</option><option>تم التأكيد</option><option>تم الإرسال للشحن</option><option>تم الشحن</option><option>تم التسليم</option><option>مرتجع</option><option>ملغي</option>
         </select>
         <input type="search" id="o-search" class="search-input" placeholder="ابحث برقم الأوردر أو الاسم أو التليفون" autocomplete="off">
         <button class="btn ghost" id="o-refresh">تحديث</button>
+        <button class="btn" id="o-sendall">إرسال المؤكدة للشحن</button>
         <span class="muted" id="o-count"></span>
       </div>
       <div id="o-list"></div>
@@ -57,6 +58,7 @@
           <div style="flex:2"><label>وصف قصير</label><input id="np-sub"></div>
           <div><label>السعر</label><input id="np-price" type="number" min="0"></div>
           <div><label>الكمية المتاحة (فاضي = غير محدود)</label><input id="np-stock" type="number" min="0"></div>
+          <div><label>وزن الكرتونة (كيلو)</label><input id="np-weight" type="number" min="0.1" step="0.1" value="1"></div>
           <div style="flex:2"><label>صورة المنتج (اختياري)</label>
             <div class="imgrow"><img class="thumb" id="np-thumb" hidden><input type="file" accept="image/*" id="np-file"><input id="np-img" type="hidden"></div>
             <div class="muted" id="np-up"></div></div>
@@ -76,24 +78,27 @@
           <div style="flex:0"><button class="btn" id="b-apply">تطبيق</button></div>
         </div>
         <div class="muted" style="margin-top:6px">اكتب الأسعار اللي عايز تغيرها بس. اكتب 0 للشحن المجاني (للعروض).</div>
+        <div class="muted">كل محافظة ليها كمان "كود المحافظة عند الشركة" (CityId) لازم يتكتب عشان الأوردرات تتبعت للشحن.</div>
       </div>
       <div id="s-list"></div>
     </section>
 
-    <section id="t-api" hidden>
+    <section id="t-areas" hidden>
       <div class="box">
-        <strong>التوثيق اللي تديه لشركة الشحن</strong>
-        <p class="muted" style="margin:6px 0">كل الطلبات POST بـ JSON ولازم الهيدرز: <code>apikey</code> و <code>Content-Type: application/json</code></p>
-        <p style="margin-top:10px"><b>1) جلب الأوردرات</b> (افتراضيا الجديدة بس، وممكن p_after لجلب اللي بعد رقم معين)</p>
-        <pre id="doc1"></pre>
-        <p style="margin-top:10px"><b>2) تحديث حالة أوردر ورقم التتبع</b> (الحالات: جديد، تم التأكيد، تم الشحن، تم التسليم، مرتجع، ملغي)</p>
-        <pre id="doc2"></pre>
-        <p class="muted" style="margin-top:10px">مبلغ التحصيل من العميل = <code>cod_amount</code> (إجمالي المنتجات + الشحن، الدفع عند الاستلام).</p>
+        <strong>استيراد المدن والمناطق وأكوادها من شركة الشحن</strong>
+        <p class="muted" style="margin:6px 0">الصق هنا كل سطر بالشكل ده (انسخه من Excel أو اكتبه بفاصلة): <b>المحافظة، اسم المدينة/المنطقة، الكود (AreaId)</b></p>
+        <pre class="ex">القاهرة,مدينة نصر,101
+القاهرة,المعادي,102</pre>
+        <textarea id="ar-text" rows="7" placeholder="القاهرة,مدينة نصر,101"></textarea>
+        <div class="toolbar" style="margin-top:8px"><button class="btn green" id="ar-import">استيراد</button><span class="muted" id="ar-msg"></span></div>
+        <div class="muted">لو المدينة موجودة قبل كده بيتحدّث كودها. المحافظة لازم تكون من القايمة اللي في تبويب أسعار الشحن.</div>
       </div>
+      <div id="ar-list"></div>
     </section>
   </main>
 </div>
 <div id="toast"></div>
+<div id="ov" class="overlay" hidden><div class="ovbox"><pre id="ov-text"></pre><button class="btn" id="ov-close">إغلاق</button></div></div>
 
 <script src="panel-33e4076d.js" defer></script>
 </body>

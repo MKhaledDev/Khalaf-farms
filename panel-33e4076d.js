@@ -1,7 +1,7 @@
 (function(){
   var SB_URL='https://akcpicfbqyalgukxvkxd.supabase.co';
   var SB_KEY='sb_publishable__hekFZ-AwpL7hRWv3DHrlQ_jh73d-AW';
-  var STATUSES=['جديد','تم التأكيد','تم الشحن','تم التسليم','مرتجع','ملغي'];
+  var STATUSES=['جديد','تم التأكيد','تم الإرسال للشحن','تم الشحن','تم التسليم','مرتجع','ملغي'];
   var session=null;
   try{ session=JSON.parse(sessionStorage.getItem('kf_admin')||'null'); }catch(e){}
   var $=function(id){return document.getElementById(id);};
@@ -43,11 +43,11 @@
   document.querySelectorAll('.tab').forEach(function(t){
     t.addEventListener('click',function(){
       document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x===t);});
-      ['orders','products','shipping','api'].forEach(function(n){$('t-'+n).hidden=(n!==t.dataset.tab);});
+      ['orders','products','shipping','areas'].forEach(function(n){$('t-'+n).hidden=(n!==t.dataset.tab);});
       if(t.dataset.tab==='orders')loadOrders();
       if(t.dataset.tab==='products')loadProducts();
       if(t.dataset.tab==='shipping')loadShipping();
-      if(t.dataset.tab==='api')loadApi();
+      if(t.dataset.tab==='areas')loadAreas();
     });
   });
 
@@ -77,14 +77,27 @@
         var items=(o.items||[]).map(function(i){return '<div><span>'+esc(i.name)+' × '+esc(i.qty)+'</span><span>'+esc(i.line_total)+' جنيه</span></div>';}).join('');
         d.innerHTML=
           '<div class="ohead"><strong>#'+o.order_no+' — '+esc(o.name)+'</strong><span class="muted">'+esc(fmtDT(o.created_at))+'</span></div>'+
-          '<div>📞 <a href="tel:'+esc(o.phone)+'">'+esc(o.phone)+'</a> · <a target="_blank" rel="noopener" href="https://wa.me/2'+esc(o.phone)+'">واتساب</a></div>'+
+          '<div>📞 <a href="tel:'+esc(o.phone)+'">'+esc(o.phone)+'</a> · <a target="_blank" rel="noopener" href="https://wa.me/2'+esc(o.phone)+'">واتساب</a>'+(o.phone2?' · 📞 <a href="tel:'+esc(o.phone2)+'">'+esc(o.phone2)+'</a>':'')+'</div>'+
           '<div>📍 '+esc(o.governorate)+' — '+esc(o.city)+'<br><span class="muted">'+esc(o.address)+'</span></div>'+
+          (o.note?'<div class="muted">📝 '+esc(o.note)+'</div>':'')+
+          '<div class="muted">📦 '+esc(o.cartons==null?'':o.cartons+' كرتونة')+(o.weight_kg!=null?' · '+esc(Number(o.weight_kg))+' كجم':'')+'</div>'+
           '<div class="items">'+items+
             '<div><span>الشحن</span><span>'+esc(o.shipping)+' جنيه</span></div>'+
             '<div class="tot"><span>المطلوب تحصيله</span><span>'+esc(o.total)+' جنيه</span></div></div>'+
           '<div class="row"><div><label>الحالة</label><select data-f="status">'+STATUSES.map(function(s){return '<option'+(s===o.status?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'+
           '<div><label>رقم التتبع</label><input data-f="tracking" dir="ltr" value="'+esc(o.tracking||'')+'"></div>'+
-          '<div style="flex:0;display:flex;gap:6px"><button class="btn green" data-a="save">حفظ</button></div></div>';
+          '<div style="flex:0;display:flex;gap:6px"><button class="btn green" data-a="save">حفظ</button></div></div>'+
+          (o.shipped_at?'<div class="ship-ok">✓ اتبعت لشركة الشحن'+(o.ship_ref?' — '+esc(String(o.ship_ref).slice(0,120)):'')+'</div>':
+            (o.ship_error?'<div class="ship-err">⚠ فشل الإرسال: '+esc(o.ship_error)+'</div>':'')+
+            (['ملغي','مرتجع','تم التسليم'].indexOf(o.status)<0?'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn" data-a="ship">إرسال للشحن</button><button class="btn ghost" data-a="prev">معاينة</button></div>':''));
+        var sb=d.querySelector('[data-a=ship]'),pb=d.querySelector('[data-a=prev]');
+        if(sb)sb.addEventListener('click',function(){
+          if(!confirm('إرسال الأوردر #'+o.order_no+' لشركة الشحن؟'))return;
+          sendToShipping([o.order_no],false).then(function(r){toast(r.results[0].ok?'تم الإرسال':(r.results[0].message||'فشل'));loadOrders();refreshNew();loadStats();}).catch(function(e){toast(e.message);});
+        });
+        if(pb)pb.addEventListener('click',function(){
+          sendToShipping([o.order_no],true).then(function(r){var x=r.results[0];showOv(x.payload?JSON.stringify(x.payload,null,2):x.message);}).catch(function(e){toast(e.message);});
+        });
         d.querySelector('[data-a=save]').addEventListener('click',function(){
           db('orders?id=eq.'+o.id,{method:'PATCH',prefer:'return=minimal',body:{status:d.querySelector('[data-f=status]').value,tracking:d.querySelector('[data-f=tracking]').value.trim()||null}})
             .then(function(){toast('تم الحفظ');refreshNew();loadStats();}).catch(function(e){toast(e.message);});
@@ -93,6 +106,29 @@
       });
     }).catch(function(e){toast(e.message);});
   }
+  function showOv(t){$('ov-text').textContent=t;$('ov').hidden=false;}
+  $('ov-close').addEventListener('click',function(){$('ov').hidden=true;});
+  function sendToShipping(nos,preview,retry){
+    return fetch(SB_URL+'/functions/v1/send-to-shipping',{method:'POST',
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+session.access,'Content-Type':'application/json'},
+      body:JSON.stringify({order_nos:nos,preview:!!preview})}).then(function(r){
+      if(r.status===401&&!retry)return refresh().then(function(){return sendToShipping(nos,preview,true);}).catch(function(){logout();throw new Error('انتهت الجلسة');});
+      return r.json().catch(function(){return {};}).then(function(d){
+        if(!r.ok)throw new Error(d.error||(r.status===404?'الدالة send-to-shipping مش منشورة على Supabase':'خطأ '+r.status));
+        return d;});
+    });
+  }
+  $('o-sendall').addEventListener('click',function(){
+    db('orders?select=order_no&status=eq.'+encodeURIComponent('تم التأكيد')+'&shipped_at=is.null&order=order_no.asc&limit=500').then(function(rows){
+      if(!rows.length){toast('مفيش أوردرات مؤكدة مستنية إرسال');return;}
+      if(!confirm('إرسال '+rows.length+' أوردر مؤكد لشركة الشحن؟'))return;
+      var nos=rows.map(function(r){return r.order_no;}),chunks=[],i;
+      for(i=0;i<nos.length;i+=50)chunks.push(nos.slice(i,i+50));
+      var ok=0,bad=0;
+      return chunks.reduce(function(p,c){return p.then(function(){return sendToShipping(c,false).then(function(r){r.results.forEach(function(x){if(x.ok)ok++;else bad++;});});});},Promise.resolve())
+        .then(function(){toast('اتبعت '+ok+(bad?' — فشل '+bad:''));loadOrders();refreshNew();loadStats();});
+    }).catch(function(e){toast(e.message);});
+  });
   $('o-filter').addEventListener('change',loadOrders);
   var searchTimer=null;
   $('o-search').addEventListener('input',function(){clearTimeout(searchTimer);searchTimer=setTimeout(loadOrders,300);});
@@ -138,7 +174,8 @@
           '<div><label>السعر العادي</label><input data-f="price" type="number" min="0" value="'+p.price+'"></div>'+
           '<div><label>سعر العرض (فاضي = مفيش عرض)</label><input data-f="offer_price" type="number" min="0" value="'+(p.offer_price==null?'':p.offer_price)+'"></div>'+
           '<div><label>العرض لحد تاريخ</label><input data-f="offer_until" type="date" value="'+(p.offer_until||'')+'"></div>'+
-          '<div><label>الترتيب</label><input data-f="sort" type="number" value="'+p.sort+'"></div></div>'+
+          '<div><label>الترتيب</label><input data-f="sort" type="number" value="'+p.sort+'"></div>'+
+          '<div><label>وزن الكرتونة (كجم)</label><input data-f="weight_kg" type="number" min="0.1" step="0.1" value="'+(p.weight_kg==null?1:p.weight_kg)+'"></div></div>'+
           '<div class="row" style="margin-top:8px">'+
           '<div><label>الكمية المتاحة (فاضي = غير محدود، 0 = نفذت)</label><input data-f="stock" type="number" min="0" value="'+(p.stock==null?'':p.stock)+'"></div>'+
           '<div><label>يظهر العدد المتبقي لما الكمية تبقى</label><input data-f="low_stock_at" type="number" min="1" value="'+(p.low_stock_at==null?5:p.low_stock_at)+'"></div>'+
@@ -156,7 +193,7 @@
           db('products?id=eq.'+encodeURIComponent(p.id),{method:'PATCH',prefer:'return=minimal',body:{
             name:g('name').value.trim(),subtitle:g('subtitle').value.trim()||null,price:parseInt(g('price').value,10)||0,
             offer_price:offer===''?null:parseInt(offer,10),offer_until:g('offer_until').value||null,
-            sort:parseInt(g('sort').value,10)||100,image_url:g('image_url').value.trim()||null,active:g('active').checked,
+            sort:parseInt(g('sort').value,10)||100,weight_kg:Math.max(0.1,parseFloat(g('weight_kg').value)||1),image_url:g('image_url').value.trim()||null,active:g('active').checked,
             stock:stk===''?null:Math.max(0,parseInt(stk,10)||0),low_stock_at:Math.max(1,parseInt(g('low_stock_at').value,10)||5)}})
             .then(function(){toast('تم الحفظ');loadProducts();}).catch(function(e){toast(e.message);});
         });
@@ -215,7 +252,7 @@
   $('np-add').addEventListener('click',function(){
     var name=$('np-name').value.trim(),price=parseInt($('np-price').value,10);
     if(!name||isNaN(price)){toast('اكتب الاسم والسعر');return;}
-    db('products',{method:'POST',prefer:'return=minimal',body:{id:'p'+Date.now(),name:name,subtitle:$('np-sub').value.trim()||null,price:price,stock:$('np-stock').value===''?null:Math.max(0,parseInt($('np-stock').value,10)||0),image_url:$('np-img').value.trim()||null,sort:100}})
+    db('products',{method:'POST',prefer:'return=minimal',body:{id:'p'+Date.now(),name:name,subtitle:$('np-sub').value.trim()||null,price:price,stock:$('np-stock').value===''?null:Math.max(0,parseInt($('np-stock').value,10)||0),image_url:$('np-img').value.trim()||null,weight_kg:Math.max(0.1,parseFloat($('np-weight').value)||1),sort:100}})
       .then(function(){toast('تمت الإضافة');['np-name','np-sub','np-price','np-stock','np-img','np-file'].forEach(function(i){$(i).value='';});$('np-thumb').hidden=true;loadProducts();}).catch(function(e){toast(e.message);});
   });
 
@@ -228,11 +265,12 @@
         var d=document.createElement('div');d.className='box';
         d.innerHTML='<div class="row"><div style="flex:2"><strong>'+esc(r.governorate)+'</strong> <span class="pill">'+REG[r.region]+'</span></div>'+
           '<div><label>سعر الشحن</label><input type="number" min="0" data-f="price" value="'+r.price+'"></div>'+
+          '<div><label>كود المحافظة عند الشركة (CityId)</label><input type="number" min="0" data-f="cid" dir="ltr" value="'+(r.company_city_id==null?'':r.company_city_id)+'"></div>'+
           '<div style="flex:0;white-space:nowrap"><label><input type="checkbox" data-f="active"'+(r.active?' checked':'')+'> متاح التوصيل</label></div>'+
           '<div style="flex:0"><button class="btn green">حفظ</button></div></div>';
         d.querySelector('button').addEventListener('click',function(){
           db('shipping_rates?governorate=eq.'+encodeURIComponent(r.governorate),{method:'PATCH',prefer:'return=minimal',body:{
-            price:parseInt(d.querySelector('[data-f=price]').value,10)||0,active:d.querySelector('[data-f=active]').checked}})
+            price:parseInt(d.querySelector('[data-f=price]').value,10)||0,company_city_id:d.querySelector('[data-f=cid]').value===''?null:parseInt(d.querySelector('[data-f=cid]').value,10),active:d.querySelector('[data-f=active]').checked}})
             .then(function(){toast('تم الحفظ');}).catch(function(e){toast(e.message);});
         });
         list.appendChild(d);
@@ -249,11 +287,47 @@
     Promise.all(jobs).then(function(){toast('تم التطبيق');['b-bahari','b-qibli','b-other'].forEach(function(i){$(i).value='';});loadShipping();}).catch(function(e){toast(e.message);});
   });
 
-  // ---- API (التوثيق بس، المفتاح مش بيتعرض) ----
-  function loadApi(){
-    $('doc1').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_get_orders' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_status\":\"جديد\",\"p_after\":0}'";
-    $('doc2').textContent="curl -X POST '"+SB_URL+"/rest/v1/rpc/api_update_order' \\\n  -H 'apikey: "+SB_KEY+"' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"p_key\":\"YOUR_API_KEY\",\"p_order_no\":1001,\"p_status\":\"تم الشحن\",\"p_tracking\":\"TRACK123\"}'";
+  // ---- المدن والمناطق ----
+  function loadAreas(){
+    Promise.all([db('shipping_rates?select=governorate,sort&order=sort.asc'),db('areas?select=governorate&limit=10000')]).then(function(res){
+      var cnt={};res[1].forEach(function(a){cnt[a.governorate]=(cnt[a.governorate]||0)+1;});
+      var list=$('ar-list');list.innerHTML='';
+      res[0].forEach(function(g){
+        var n=cnt[g.governorate]||0,d=document.createElement('div');d.className='box';
+        d.innerHTML='<div class="row"><div style="flex:2"><strong>'+esc(g.governorate)+'</strong> <span class="muted">'+n+' مدينة/منطقة</span></div>'+
+          (n?'<div style="flex:0"><button class="btn red">مسح مناطقها</button></div>':'')+'</div>';
+        var bt=d.querySelector('button');
+        if(bt)bt.addEventListener('click',function(){
+          if(!confirm('مسح كل مناطق '+g.governorate+'؟'))return;
+          db('areas?governorate=eq.'+encodeURIComponent(g.governorate),{method:'DELETE',prefer:'return=minimal'}).then(function(){toast('تم المسح');loadAreas();}).catch(function(e){toast(e.message);});
+        });
+        list.appendChild(d);
+      });
+    }).catch(function(e){toast(e.message+' (اتأكد إنك شغلت supabase-shipping.sql)');});
   }
+  $('ar-import').addEventListener('click',function(){
+    var lines=$('ar-text').value.split(/\r?\n/),rows=[],bad=[],seen={};
+    db('shipping_rates?select=governorate').then(function(gs){
+      var known={};gs.forEach(function(g){known[g.governorate]=1;});
+      lines.forEach(function(l){
+        l=l.trim();if(!l)return;
+        var parts=l.split(/\t|,|،|;/).map(function(x){return x.trim();});
+        var id=parseInt(parts[parts.length-1],10);
+        if(parts.length<3||isNaN(id)){if(/\d/.test(l)||parts.length>1)bad.push(l);return;}
+        var gov=parts[0],name=parts.slice(1,-1).join(' ').trim();
+        if(!known[gov]||!name){bad.push(l);return;}
+        seen[gov+'|'+name]=1;
+        rows.push({governorate:gov,name:name,company_area_id:id,active:true});
+      });
+      var uniq={};rows.forEach(function(r){uniq[r.governorate+'|'+r.name]=r;});rows=Object.keys(uniq).map(function(k){return uniq[k];});
+      if(!rows.length){$('ar-msg').textContent=bad.length?'مفيش سطر صالح — الأسطر الغلط: '+bad.length:'الصق البيانات الأول';return;}
+      var jobs=[],i;
+      for(i=0;i<rows.length;i+=500)jobs.push(rows.slice(i,i+500));
+      $('ar-msg').textContent='جاري الاستيراد...';
+      return jobs.reduce(function(p,c){return p.then(function(){return db('areas?on_conflict=governorate,name',{method:'POST',prefer:'resolution=merge-duplicates,return=minimal',body:c});});},Promise.resolve())
+        .then(function(){$('ar-msg').textContent='تم استيراد '+rows.length+(bad.length?' — اتجاهل '+bad.length+' سطر (محافظة مش معروفة أو شكل غلط): '+bad.slice(0,3).join(' | '):'');$('ar-text').value='';loadAreas();});
+    }).catch(function(e){$('ar-msg').textContent=e.message;});
+  });
 
   var poll=null;
   function start(){$('login').hidden=true;$('app').hidden=false;loadOrders();refreshNew();loadStats();clearInterval(poll);poll=setInterval(function(){if(session){refreshNew();loadStats();}},60000);}
